@@ -1,0 +1,506 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Settings, 
+  Download, 
+  Plus, 
+  Trash2, 
+  CheckCircle2, 
+  Circle, 
+  LayoutGrid, 
+  Type,
+  Hash,
+  Shapes,
+  Apple,
+  Dog,
+  Upload,
+  Printer,
+  ChevronRight,
+  ChevronLeft,
+  RotateCcw,
+  PlayCircle,
+  X,
+  Edit3
+} from 'lucide-react';
+
+// --- 常數定義與資料庫 ---
+const GRID_SIZES = [3, 4, 5];
+
+const THEMES = {
+  NUMBERS: { id: 'numbers', name: '基礎數字', icon: <Hash size={18} /> },
+  CHINESE: { id: 'chinese', name: '國字版', icon: <Type size={18} /> },
+  SHAPES: { id: 'shapes', name: '圖形版', icon: <Shapes size={18} /> },
+  FRUITS: { id: 'fruits', name: '蔬果版', icon: <Apple size={18} /> },
+  ANIMALS: { id: 'animals', name: '動物版', icon: <Dog size={18} /> },
+  CUSTOM: { id: 'custom', name: '自己上傳', icon: <Upload size={18} /> }
+};
+
+const DEFAULT_CHINESE = '福祿壽喜春秋冬夏金木水火土天地人平安健康快樂吉祥富貴圓滿長壽大吉好運百福千禧靈睿智勇誠信仁愛'.split('');
+
+const LIBRARIES = {
+  numbers: Array.from({ length: 75 }, (_, i) => ({ id: `n-${i+1}`, content: (i + 1).toString(), type: 'text' })),
+  shapes: [
+    '🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '⬛', '⬜', '🟥', '🟧', '🟨', '🟩', '🟦', '🟪',
+    '⭐', '🌟', '✨', '🌙', '☀️', '☁️', '❄️', '🔥', '💧', '⚡', '🌀', '💎', '❤️', '🧡', '💛', '💚', '💙', '💜'
+  ].map((s, i) => ({ id: `s-${i}`, content: s, type: 'text' })),
+  fruits: [
+    '🍎', '🍏', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈', '🍒', '🍑', '🥭', '🍍', '🥥', 
+    ' kiwi ', '🍅', ' eggplant ', ' avocado ', '🥦', '🥬', '🥒', '🌽', '🥕', '🥔', '🍠', '🍄', '🥜', '🌰', '🧅', '🧄'
+  ].map((f, i) => ({ id: `f-${i}`, content: f, type: 'text' })),
+  animals: [
+    '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸', '🐵', '雞',
+    '🐧', '🐦', '🐤', '🦆', '🦅', '🦉', '蝙蝠', '🐺', '🐗', '🐴', '🦄', '🐝', '🐛', '🦋', '🐌', '🐞'
+  ].map((a, i) => ({ id: `a-${i}`, content: a, type: 'text' }))
+};
+
+const loadScript = (url) => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${url}"]`)) return resolve();
+    const script = document.createElement('script');
+    script.src = url;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+export default function App() {
+  const [gridSize, setGridSize] = useState(4);
+  const [activeTheme, setActiveTheme] = useState('numbers');
+  const [selectedItems, setSelectedItems] = useState(new Set());
+  const [customItems, setCustomItems] = useState([]);
+  const [customChineseInput, setCustomChineseInput] = useState('');
+  const [copies, setCopies] = useState(1);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [step, setStep] = useState(1); 
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  // 抽籤器狀態
+  const [drawnItems, setDrawnItems] = useState([]);
+  const [currentDrawn, setCurrentDrawn] = useState(null);
+  const [isRolling, setIsRolling] = useState(false);
+
+  const chineseLibrary = useMemo(() => {
+    const base = customChineseInput.length > 0 ? customChineseInput.split('') : DEFAULT_CHINESE;
+    return base.map((c, i) => ({ id: `c-${i}`, content: c, type: 'text' }));
+  }, [customChineseInput]);
+
+  const currentLibrary = useMemo(() => {
+    if (activeTheme === 'custom') return customItems;
+    if (activeTheme === 'chinese') return chineseLibrary;
+    return LIBRARIES[activeTheme] || [];
+  }, [activeTheme, customItems, chineseLibrary]);
+
+  useEffect(() => {
+    const needed = gridSize * gridSize;
+    const initialSelection = new Set();
+    currentLibrary.slice(0, Math.max(needed, 16)).forEach(item => initialSelection.add(item.id));
+    setSelectedItems(initialSelection);
+  }, [activeTheme, gridSize, currentLibrary]);
+
+  const toggleItem = (id) => {
+    const newSelection = new Set(selectedItems);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    setSelectedItems(newSelection);
+  };
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files);
+    const newItems = files.map((file, index) => ({
+      id: `custom-${Date.now()}-${index}`,
+      content: URL.createObjectURL(file),
+      type: 'image'
+    }));
+    setCustomItems([...customItems, ...newItems]);
+    setActiveTheme('custom');
+  };
+
+  const selectedPool = useMemo(() => currentLibrary.filter(item => selectedItems.has(item.id)), [currentLibrary, selectedItems]);
+
+  const previewNumbers = useMemo(() => {
+    const arr = Array.from({ length: gridSize * gridSize }, (_, i) => (i + 1).toString());
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [gridSize, step]);
+
+  const shuffle = (array) => {
+    const newArr = [...array];
+    for (let i = newArr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+    }
+    return newArr;
+  };
+
+  const generatePDF = async () => {
+    if (selectedPool.length < gridSize * gridSize) return;
+    setIsGenerating(true);
+    try {
+      await Promise.all([
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
+      ]);
+      const { jsPDF } = window.jspdf;
+      const html2canvas = window.html2canvas;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const container = document.getElementById('print-container');
+      container.style.display = 'block';
+
+      for (let i = 0; i < copies; i++) {
+        const shuffled = shuffle(selectedPool).slice(0, gridSize * gridSize);
+        renderBingoToDiv(shuffled, i + 1);
+        const canvas = await html2canvas(document.getElementById(`bingo-page-${i}`), { 
+          scale: 2, 
+          useCORS: true,
+          backgroundColor: '#ffffff'
+        });
+        const imgData = canvas.toDataURL('image/png');
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
+      }
+      pdf.save(`賓果訓練卡_${new Date().getTime()}.pdf`);
+      container.style.display = 'none';
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const renderBingoToDiv = (items, pageNum) => {
+    const container = document.getElementById(`bingo-page-${pageNum - 1}`);
+    if (!container) return;
+    // 更新 PDF 渲染範本：加入「賓果遊戲卡」主標題，保留姓名/日期填寫處與作者署名
+    container.innerHTML = `
+      <div style="width: 210mm; height: 297mm; display: flex; flex-direction: column; align-items: center; justify-content: center; background: white; padding: 0; margin: 0; box-sizing: border-box; overflow: hidden; position: relative;">
+        
+        <!-- 主標題 -->
+        <h1 style="margin: 0 0 8mm 0; font-size: 32pt; font-weight: bold; font-family: sans-serif; color: #000; text-align: center;">賓果遊戲卡</h1>
+
+        <!-- 頂部填寫處 -->
+        <div style="width: 175mm; display: flex; justify-content: space-between; margin-bottom: 15mm; font-family: sans-serif; font-size: 16pt; font-weight: bold; border-bottom: 2px solid #eee; padding-bottom: 8px;">
+          <span>姓名：________________</span>
+          <span>日期：____ 年 ____ 月 ____ 日</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(${gridSize}, 1fr); width: 175mm; height: 175mm; border: 5pt solid #000; background: #000; gap: 5pt; box-sizing: border-box; overflow: hidden;">
+          ${items.map(item => `
+            <div style="background: white; display: flex; align-items: center; justify-content: center; padding: 0; margin: 0; overflow: hidden; height: 100%; width: 100%; box-sizing: border-box;">
+              ${item.type === 'text' 
+                ? `<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; transform: translateY(-25%);">
+                    <span style="font-size: ${gridSize === 5 ? '58pt' : gridSize === 4 ? '72pt' : '96pt'}; font-weight: bold; font-family: sans-serif; line-height: 1; display: block; margin: 0; padding: 0; text-align: center;">${item.content}</span>
+                  </div>`
+                : `<div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;">
+                    <img src="${item.content}" style="max-width: 90%; max-height: 90%; object-fit: contain; display: block;" />
+                  </div>`
+              }
+            </div>
+          `).join('')}
+        </div>
+        
+        <!-- 底部署名 -->
+        <div style="margin-top: 15mm; font-family: sans-serif; text-align: center;">
+          <p style="font-size: 11pt; color: #666; margin: 0;">
+            <a href="https://www.facebook.com/mpotkevin" style="color: #666; text-decoration: none;">設計：職能治療師 - 鄭凱文</a>
+          </p>
+        </div>
+      </div>
+    `;
+  };
+
+  const drawNext = () => {
+    const available = selectedPool.filter(item => !drawnItems.find(d => d.id === item.id));
+    if (available.length === 0) return;
+    setIsRolling(true);
+    let count = 0;
+    const interval = setInterval(() => {
+      setCurrentDrawn(available[Math.floor(Math.random() * available.length)]);
+      count++;
+      if (count > 15) {
+        clearInterval(interval);
+        const final = available[Math.floor(Math.random() * available.length)];
+        setCurrentDrawn(final);
+        setDrawnItems(prev => [final, ...prev]);
+        setIsRolling(false);
+      }
+    }, 80);
+  };
+
+  const confirmReset = () => {
+    setDrawnItems([]);
+    setCurrentDrawn(null);
+    setShowResetModal(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 font-sans flex flex-col">
+      <header className="bg-white border-b sticky top-0 z-30 shadow-sm px-4 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="bg-indigo-600 p-2 rounded-lg text-white"><LayoutGrid size={24} /></div>
+          <h1 className="text-xl font-bold tracking-tight">長者賓果產生器</h1>
+        </div>
+        <div className="hidden md:flex gap-4 text-xs font-bold uppercase tracking-wider">
+          {['設定', '挑選', '輸出', '遊戲'].map((label, i) => (
+            <span key={i} className={step === i + 1 ? "text-indigo-600 font-extrabold" : "text-slate-300"}>{i + 1}. {label}</span>
+          ))}
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto p-4 md:p-8 flex-grow w-full">
+        {step === 1 && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <h2 className="text-2xl font-bold flex items-center gap-3"><Settings className="text-indigo-600" /> 1. 遊戲尺寸與主題</h2>
+            <div className="grid md:grid-cols-2 gap-10">
+              <div className="space-y-4">
+                <label className="text-sm font-bold text-slate-500 uppercase tracking-widest">賓果盤尺寸</label>
+                <div className="flex gap-4">
+                  {GRID_SIZES.map(size => (
+                    <button key={size} onClick={() => setGridSize(size)} className={`flex-1 py-6 rounded-2xl border-2 transition-all ${gridSize === size ? "border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md" : "border-slate-100 hover:border-slate-300 bg-white"}`}>
+                      <div className="text-2xl font-black">{size}×{size}</div>
+                      <div className="text-xs opacity-60">{size*size} 格</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <label className="text-sm font-bold text-slate-500 uppercase tracking-widest">預設主題庫</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(THEMES).map(([k, t]) => (
+                    <button key={t.id} onClick={() => setActiveTheme(t.id)} className={`flex items-center gap-2 p-4 rounded-xl border text-sm font-medium transition-all ${activeTheme === t.id ? "bg-indigo-600 text-white shadow-md" : "bg-white hover:bg-slate-50"}`}>
+                      {t.icon} {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end pt-4"><button onClick={() => setStep(2)} className="bg-indigo-600 text-white px-10 py-4 rounded-2xl font-bold shadow-lg flex items-center gap-2 hover:bg-indigo-700 transition-colors">下一步：挑選內容 <ChevronRight /></button></div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className="flex justify-between items-end border-b pb-6">
+              <div className="w-full">
+                <h2 className="text-2xl font-bold mb-2">2. 挑選內容</h2>
+                <div className="flex items-center justify-between">
+                  <p className="text-slate-500 italic text-sm font-medium">已選: <span className="text-indigo-600 font-bold">{selectedItems.size}</span> (需至少 {gridSize*gridSize} 個)</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setSelectedItems(new Set(currentLibrary.map(i => i.id)))} className="text-xs font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 transition-colors">全選</button>
+                    <button onClick={() => setSelectedItems(new Set())} className="text-xs font-bold bg-slate-100 px-4 py-2 rounded-lg hover:bg-slate-200 text-red-500 transition-colors">清空</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {activeTheme === 'chinese' && (
+              <div className="space-y-3 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 animate-in fade-in">
+                <label className="text-sm font-bold text-indigo-700 flex items-center gap-2">
+                  <Edit3 size={16} /> 自定義國字 (請直接輸入想要出現的字)
+                </label>
+                <input 
+                  type="text" 
+                  value={customChineseInput}
+                  onChange={(e) => setCustomChineseInput(e.target.value)}
+                  placeholder="例如：春、夏、秋、冬、喜、樂..."
+                  className="w-full p-4 rounded-xl border-2 border-indigo-100 focus:border-indigo-500 focus:outline-none bg-white font-medium"
+                />
+              </div>
+            )}
+
+            {activeTheme === 'custom' && (
+              <div className="border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-8 rounded-2xl text-center hover:bg-indigo-50 transition-colors">
+                <input type="file" multiple accept="image/*" onChange={handleFileUpload} id="up" className="hidden" />
+                <label htmlFor="up" className="cursor-pointer flex flex-col items-center gap-3">
+                  <div className="bg-white p-3 rounded-full shadow-sm text-indigo-600"><Upload size={32} /></div>
+                  <p className="font-bold">上傳專屬圖片</p>
+                </label>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-4 max-h-[45vh] overflow-y-auto p-4 bg-slate-100 rounded-2xl">
+              {currentLibrary.map(item => (
+                <div key={item.id} onClick={() => toggleItem(item.id)} className={`relative aspect-square rounded-2xl cursor-pointer flex items-center justify-center border-4 transition-all ${selectedItems.has(item.id) ? "border-indigo-500 bg-white shadow-md scale-95" : "border-white bg-white/60 hover:border-slate-300"}`}>
+                  <div className="w-[85%] h-[85%] flex items-center justify-center overflow-hidden">
+                    {item.type === 'text' ? (
+                      <span className="text-4xl md:text-5xl font-black text-slate-800 leading-none">{item.content}</span>
+                    ) : (
+                      <img src={item.content} className="max-w-full max-h-full object-contain" alt="" />
+                    )}
+                  </div>
+                  {selectedItems.has(item.id) && <div className="absolute -top-2 -right-2 bg-indigo-600 text-white rounded-full p-1 border-2 border-white shadow-sm"><CheckCircle2 size={16} /></div>}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-between pt-6">
+              <button onClick={() => setStep(1)} className="px-8 py-4 font-bold border rounded-2xl hover:bg-slate-50 transition-colors">上一步</button>
+              <button onClick={() => setStep(3)} disabled={selectedItems.size < gridSize*gridSize} className={`px-10 py-4 rounded-2xl font-bold shadow-lg transition-all ${selectedItems.size < gridSize*gridSize ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-indigo-600 text-white hover:bg-indigo-700"}`}>下一步：輸出設定</button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: 列印輸出 */}
+        {step === 3 && (
+          <div className="bg-white rounded-3xl p-8 shadow-sm border space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <h2 className="text-2xl font-bold flex items-center gap-3"><Printer className="text-indigo-600" /> 3. 輸出設定</h2>
+            <div className="grid md:grid-cols-2 gap-12">
+              <div className="space-y-8">
+                <div className="space-y-4">
+                  <label className="block text-sm font-bold text-slate-600 uppercase tracking-widest">要列印幾份？</label>
+                  <input 
+                    type="number" min="1" max="100" value={copies} 
+                    onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full text-4xl font-black text-indigo-600 border-2 border-indigo-100 rounded-2xl p-5 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-50/50" 
+                  />
+                  <p className="text-xs text-slate-400 font-medium italic">賓果卡排列皆自動重新隨機，且優化了垂直置中排版。</p>
+                </div>
+              </div>
+              <div className="flex flex-col items-center">
+                <p className="mb-4 text-xs font-bold text-slate-400 uppercase tracking-widest">排版範本預覽 ({gridSize}×{gridSize})</p>
+                <div className="w-64 aspect-[1/1.4] bg-white shadow-2xl rounded-sm border p-4 flex flex-col items-center justify-center gap-4">
+                  <div className={`grid grid-cols-${gridSize} gap-1 w-full aspect-square bg-slate-900 border-2 border-slate-900`}>
+                    {previewNumbers.map((num, i) => (
+                      <div key={i} className="bg-white flex items-center justify-center text-xl font-black text-slate-800">
+                        {num}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-between pt-8">
+              <button onClick={() => setStep(2)} className="px-8 py-4 font-bold border rounded-2xl hover:bg-slate-50 transition-colors">上一步</button>
+              <div className="flex gap-4">
+                <button onClick={() => setStep(4)} className="bg-white border-2 border-indigo-600 text-indigo-600 px-8 py-4 rounded-2xl font-bold transition-all hover:bg-indigo-50">開啟抽籤器</button>
+                <button onClick={generatePDF} disabled={isGenerating} className="bg-green-600 text-white px-10 py-4 rounded-2xl font-bold shadow-lg flex items-center gap-2 hover:bg-green-700 transition-transform active:scale-95 disabled:bg-slate-300">
+                  {isGenerating ? "產生中..." : <><Download size={20} /> 下載 PDF</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: 抽籤器 */}
+        {step === 4 && (
+          <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border space-y-6 animate-in zoom-in duration-300">
+            <div className="flex justify-between items-center border-b pb-4">
+              <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 text-indigo-600"><PlayCircle /> 遊戲抽籤器</h2>
+              <button onClick={() => setShowResetModal(true)} className="text-slate-400 hover:text-red-500 transition-colors flex items-center gap-2 font-bold text-sm">
+                <RotateCcw size={16} /> 重置遊戲
+              </button>
+            </div>
+
+            <div className="grid lg:grid-cols-12 gap-8">
+              {/* 主畫面 */}
+              <div className="lg:col-span-8 flex flex-col items-center justify-center bg-slate-900 rounded-[2.5rem] p-8 min-h-[400px] shadow-2xl relative border-b-4 border-indigo-600">
+                {currentDrawn ? (
+                  <div className={`flex flex-col items-center gap-6 animate-in zoom-in duration-300 ${isRolling ? 'opacity-40' : 'opacity-100'}`}>
+                    <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-8 border-indigo-500 flex items-center justify-center w-64 h-64 md:w-80 md:h-80 overflow-hidden">
+                      {currentDrawn.type === 'text' ? (
+                        <span className="text-[120px] md:text-[160px] font-black text-slate-900 leading-none flex items-center justify-center transform translateY-[-25%]">{currentDrawn.content}</span>
+                      ) : (
+                        <img src={currentDrawn.content} className="max-w-[95%] max-h-[95%] object-contain" />
+                      )}
+                    </div>
+                    {!isRolling && (
+                      <div className="text-white text-3xl font-black bg-indigo-600 px-10 py-3 rounded-full shadow-lg">請圈選：{currentDrawn.type === 'text' ? currentDrawn.content : '這個圖案'}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-slate-500 text-center">
+                    <PlayCircle size={64} className="mx-auto mb-4 opacity-20 text-white" />
+                    <p className="text-white text-xl font-bold">點擊下方開始隨機抽籤</p>
+                  </div>
+                )}
+                
+                <button 
+                  onClick={drawNext} disabled={isRolling}
+                  className={`mt-10 bg-white text-slate-900 w-full max-w-sm py-6 rounded-2xl text-2xl font-black shadow-xl hover:scale-105 active:scale-95 transition-all ${isRolling ? 'opacity-50 cursor-wait' : 'hover:bg-indigo-50'}`}
+                >
+                  {isRolling ? '抽籤中...' : '抽下一球'}
+                </button>
+              </div>
+
+              {/* 歷史紀錄：放大 3 倍視覺效果 */}
+              <div className="lg:col-span-4 bg-slate-50 rounded-3xl p-4 border-2 border-slate-100 flex flex-col max-h-[500px]">
+                <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest mb-4 flex justify-between">
+                  已抽紀錄 <span>({drawnItems.length})</span>
+                </h3>
+                <div className="grid grid-cols-6 lg:grid-cols-7 gap-1.5 overflow-visible pr-1 custom-scrollbar">
+                  {drawnItems.map((item, idx) => (
+                    <div key={idx} className="bg-white rounded-lg border border-slate-200 flex items-center justify-center aspect-square relative shadow-sm hover:border-indigo-300 transition-colors z-0">
+                      <span className="absolute top-0.5 left-0.5 text-[6px] bg-indigo-50 text-indigo-500 w-3 h-3 rounded-full flex items-center justify-center font-black leading-none z-20">
+                        {drawnItems.length - idx}
+                      </span>
+                      {/* 內容放大三倍 */}
+                      <div className="w-full h-full flex items-center justify-center transform scale-[3] pointer-events-none z-10">
+                        {item.type === 'text' ? (
+                          <span className="text-[12px] font-black text-slate-900 leading-none text-center inline-block transform translateY-[-25%]">{item.content}</span>
+                        ) : (
+                          <img src={item.content} className="w-[8px] h-[8px] object-contain" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {drawnItems.length === 0 && <div className="col-span-full py-20 text-center text-slate-300 text-[10px] italic">尚未開始</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button onClick={() => setStep(3)} className="text-slate-500 font-bold flex items-center gap-2 hover:bg-slate-100 px-4 py-2 rounded-lg transition-colors"><ChevronLeft size={16} /> 返回輸出設定</button>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* 網頁底部署名 */}
+      <footer className="text-center py-6 text-slate-400 text-sm border-t bg-white">
+        <a href="https://www.facebook.com/mpotkevin" target="_blank" rel="noopener noreferrer" className="text-slate-400 font-bold hover:text-indigo-600 transition-colors">
+          設計：職能治療師 - 鄭凱文
+        </a>
+      </footer>
+
+      {/* Reset Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-8 max-w-sm w-full shadow-2xl animate-in zoom-in duration-200">
+            <div className="bg-red-50 w-16 h-16 rounded-full flex items-center justify-center text-red-600 mb-6 mx-auto">
+              <RotateCcw size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-center mb-6">確定要清空紀錄重來？</h3>
+            <div className="flex gap-3">
+              <button onClick={() => setShowResetModal(false)} className="flex-1 py-3 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">取消</button>
+              <button onClick={confirmReset} className="flex-1 py-3 font-bold text-white bg-red-600 rounded-xl hover:bg-red-600 transition-colors">確定</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PDF Container (完全隱藏在螢幕外) */}
+      <div id="print-container" style={{ position: 'absolute', left: '-9999px', top: 0, width: '210mm', display: 'none', background: 'white' }}>
+        {Array.from({ length: copies }).map((_, i) => (
+          <div key={i} id={`bingo-page-${i}`} style={{ width: '210mm', height: '297mm', background: 'white' }}></div>
+        ))}
+      </div>
+
+      <style>{`
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoom-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+        @keyframes slide-in-from-bottom-4 { from { transform: translateY(1rem); } to { transform: translateY(0); } }
+        .animate-in { animation-fill-mode: forwards; }
+        .fade-in { animation-name: fade-in; }
+        .zoom-in { animation-name: zoom-in; }
+        .slide-in-from-bottom-4 { animation-name: slide-in-from-bottom-4; }
+        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      `}</style>
+    </div>
+  );
+}
