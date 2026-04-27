@@ -418,7 +418,6 @@
                                     </div>
                                 </div>
                                 
-                                {/* 修正手機版按鈕佈局：由下而上堆疊，並填滿寬度 */}
                                 <div className="flex flex-col-reverse sm:flex-row justify-between gap-4 pt-8">
                                     <button onClick={() => setStep(2)} className="w-full sm:w-auto px-8 py-4 font-bold border border-slate-200 rounded-2xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 text-slate-600">
                                         <SvgIcon name="chevron-left" className="w-4 h-4"/> 上一步
@@ -456,7 +455,7 @@
                                                     )}
                                                 </div>
                                                 {!isRolling && (
-                                                    <div className="text-white text-3xl font-black bg-indigo-600 px-10 py-3 rounded-full shadow-lg animate-bounce">
+                                                    <div className="text-white text-3xl font-black bg-indigo-600 px-10 py-3 rounded-full shadow-lg animate-bounce text-center">
                                                         請圈選：{currentDrawn.type === 'text' ? currentDrawn.content : '這個圖案'}
                                                     </div>
                                                 )}
@@ -473,23 +472,26 @@
                                         </button>
                                     </div>
 
-                                    <div className="lg:col-span-5 bg-slate-100 rounded-3xl p-6 border border-slate-200 flex flex-col max-h-[600px] shadow-inner">
+                                    {/* 已抽紀錄區：電腦版改為 2 欄佈局，每一格更巨大 */}
+                                    <div className="lg:col-span-5 bg-slate-100 rounded-3xl p-4 md:p-6 border border-slate-200 flex flex-col max-h-[500px] md:max-h-[600px] shadow-inner">
                                         <h3 className="font-black text-slate-600 text-sm uppercase mb-4 flex justify-between tracking-widest border-b border-slate-200 pb-2">已抽出紀錄 ({drawnItems.length})</h3>
-                                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 overflow-y-auto pr-2 custom-scrollbar">
+                                        <div className="grid grid-cols-2 lg:grid-cols-2 gap-4 overflow-y-auto pr-2 custom-scrollbar">
                                             {drawnItems.map((item, idx) => (
-                                                <div key={idx} className="bg-white rounded-2xl border-2 border-slate-200 flex items-center justify-center aspect-square relative shadow-md z-0 hover:border-indigo-400 transition-all group animate-zoom-in">
-                                                    <span className="absolute top-1 left-1 text-[10px] bg-indigo-600 text-white w-5 h-5 rounded-full flex items-center justify-center font-black z-20 shadow-sm">
+                                                <div key={idx} className="bg-white rounded-3xl border-2 border-slate-200 flex items-center justify-center aspect-square relative shadow-lg z-0 hover:border-indigo-400 transition-all group animate-zoom-in">
+                                                    {/* 序號題標調整：縮小位置偏移，避免壓到中央文字 */}
+                                                    <span className="absolute top-2 left-2 text-[12px] bg-indigo-600 text-white w-6 h-6 rounded-full flex items-center justify-center font-black z-20 shadow-sm opacity-80">
                                                         {drawnItems.length - idx}
                                                     </span>
-                                                    <div className="w-[90%] h-[90%] flex items-center justify-center pointer-events-none z-10 overflow-hidden">
+                                                    
+                                                    <div className="w-full h-full flex items-center justify-center pointer-events-none z-10 overflow-hidden p-4">
                                                         {item.type === 'text' ? (
-                                                            <div className="w-full h-full flex items-center justify-center transform scale-[3]">
-                                                                <span className="text-[12px] font-black text-slate-900 leading-none transform -translate-y-[10%] inline-block text-center">{item.content}</span>
-                                                            </div>
+                                                            /* 針對大格子調整文字顯示方式：不使用 Scale 而是直接加大 Font Size */
+                                                            <span className="text-6xl md:text-7xl font-black text-slate-900 leading-none transform -translate-y-[10%] inline-block text-center">
+                                                                {item.content}
+                                                            </span>
                                                         ) : (
-                                                            <div className="w-full h-full flex items-center justify-center">
-                                                                <img src={item.content} className="w-[85%] h-[85%] object-contain" />
-                                                            </div>
+                                                            /* 圖片佔比 85% 以上 */
+                                                            <img src={item.content} className="w-[90%] h-[90%] object-contain" />
                                                         )}
                                                     </div>
                                                 </div>
